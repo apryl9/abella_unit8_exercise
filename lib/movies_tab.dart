@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 const omdbKey = String.fromEnvironment('OMDB_KEY');
@@ -156,42 +155,37 @@ class _MoviesTabState extends State<MoviesTab> {
                           final movie = movies[index];
 
                           final id = movie['imdbID'] ?? '';
-                          final title = movie['Title'] ?? 'Untitled';
+                          final title =
+                              movie['Title'] ?? 'Untitled';
                           final year = movie['Year'] ?? '';
                           final poster = movie['Poster'] ?? '';
 
                           return ListTile(
-                            onTap: () async {
-                              final messenger =
-                                  ScaffoldMessenger.of(context);
-
-                              await Clipboard.setData(
-                                ClipboardData(text: id.toString()),
-                              );
-
-                              if (!mounted) return;
-
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Movie ID copied: $id',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      MovieDetailsPage(
+                                    imdbId: id.toString(),
                                   ),
                                 ),
                               );
                             },
-                            leading: poster != 'N/A'
+                            leading: poster != 'N/A' &&
+                                    poster.toString().isNotEmpty
                                 ? Image.network(
-                                    poster,
+                                    poster.toString(),
                                     width: 50,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, _, _) =>
-                                        const Icon(
-                                      Icons.movie,
-                                    ),
+                                        const Icon(Icons.movie),
                                   )
                                 : const Icon(Icons.movie),
                             title: Text(title.toString()),
                             subtitle: Text(year.toString()),
+                            trailing:
+                                const Icon(Icons.chevron_right),
                           );
                         },
                       );
@@ -199,6 +193,206 @@ class _MoviesTabState extends State<MoviesTab> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class MovieDetailsPage extends StatefulWidget {
+  final String imdbId;
+
+  const MovieDetailsPage({
+    super.key,
+    required this.imdbId,
+  });
+
+  @override
+  State<MovieDetailsPage> createState() =>
+      _MovieDetailsPageState();
+}
+
+class _MovieDetailsPageState extends State<MovieDetailsPage> {
+  late Future<Map<String, dynamic>> _movieFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _movieFuture = fetchMovieDetails();
+  }
+
+  Future<Map<String, dynamic>> fetchMovieDetails() async {
+    final uri = Uri.https(
+      'www.omdbapi.com',
+      '/',
+      {
+        'apikey': omdbKey,
+        'i': widget.imdbId,
+        'plot': 'full',
+      },
+    );
+
+    final response = await http.get(uri);
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load movie details.');
+    }
+
+    final data = jsonDecode(response.body);
+
+    if (data['Response'] == 'False') {
+      throw Exception(
+        data['Error'] ?? 'Movie details unavailable.',
+      );
+    }
+
+    return data as Map<String, dynamic>;
+  }
+
+  Widget detailRow(String label, dynamic value) {
+    final text = value?.toString() ?? '';
+
+    if (text.isEmpty || text == 'N/A') {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SizedBox(
+        width: double.infinity,
+        child: RichText(
+          text: TextSpan(
+            style: Theme.of(context).textTheme.bodyLarge,
+            children: [
+              TextSpan(
+                text: '$label: ',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextSpan(text: text),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Movie Details'),
+      ),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _movieFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text('Error: ${snapshot.error}'),
+              ),
+            );
+          }
+
+          final movie = snapshot.data!;
+
+          final poster = movie['Poster']?.toString() ?? '';
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (poster.isNotEmpty && poster != 'N/A')
+                  Image.network(
+                    poster,
+                    height: 300,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) =>
+                        const Icon(Icons.movie, size: 120),
+                  )
+                else
+                  const Icon(Icons.movie, size: 120),
+
+                const SizedBox(height: 24),
+
+                Text(
+                  movie['Title']?.toString() ?? 'Untitled',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  '${movie['Year'] ?? ''} • '
+                  '${movie['Rated'] ?? 'Not rated'}',
+                  textAlign: TextAlign.center,
+                ),
+
+                const SizedBox(height: 28),
+
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Movie Information',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                detailRow('Genre', movie['Genre']),
+                detailRow('Director', movie['Director']),
+                detailRow('Writer', movie['Writer']),
+                detailRow('Actors', movie['Actors']),
+                detailRow('Runtime', movie['Runtime']),
+                detailRow('Language', movie['Language']),
+                detailRow('Country', movie['Country']),
+                detailRow('IMDb Rating', movie['imdbRating']),
+
+                const SizedBox(height: 16),
+
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Plot',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    movie['Plot']?.toString() ??
+                        'No plot available.',
+                    textAlign: TextAlign.justify,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

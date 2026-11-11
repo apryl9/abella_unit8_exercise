@@ -52,15 +52,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => PhotoScreen(photo: photo),
+        builder: (context) => PhotoScreen(
+        photo: photo,
+          isFavorite: _favoriteAsset == photo.asset,
+        ),
       ),
     );
 
     if (!mounted) return;
 
-    if (result == true) {
+    if (result != null) {
       setState(() {
-        _favoriteAsset = photo.asset;
+        _favoriteAsset = result ? photo.asset : null;
       });
     }
   }
@@ -140,10 +143,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
 class PhotoScreen extends StatelessWidget {
   final Photo photo;
+  final bool isFavorite;
 
   const PhotoScreen({
     super.key,
     required this.photo,
+    required this.isFavorite,
   });
 
   @override
@@ -172,10 +177,12 @@ class PhotoScreen extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () {
-                    Navigator.pop(context, true);
+                    Navigator.pop(context, !isFavorite);
                   },
                   icon: const Icon(Icons.star),
-                  label: const Text('Make favorite'),
+                  label: Text(
+                    isFavorite ? 'Remove favorite' : 'Make favorite',
+                  ),
                 ),
               ),
             ],
